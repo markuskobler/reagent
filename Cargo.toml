@@ -1,0 +1,17 @@
+[project]
+name = "reagent"
+version = "0.1.0"
+
+[[bin]]
+name    = "reagent"
+test    = false
+doctest = false
+doc     = false
+
+[[test]]
+name = "tests"
+
+[dependencies]
+mio = "0.3"
+log = "0.3"
+byteorder = "0.3"
