@@ -50,12 +50,12 @@ impl mio::Handler for Server {
                 let mut buf = [0; 512];
                 match self.udp_socket.recv_from(&mut buf) {
                     Ok((_amt, src)) => {
-                        match Message::unpack(&buf) {
+                        match Message::unpack(&buf, 0) {
                             Ok(msg) => if !msg.qr {
                                 println!("{}", msg);
 
                                 let msg = Message::new_reply(&msg);
-                                let len = msg.pack(&mut buf).unwrap();
+                                let len = msg.pack(&mut buf, 0).unwrap();
 
                                 match self.udp_socket.send_to(&buf[..len], src) {
                                     Err(e) => {

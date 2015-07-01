@@ -1,5 +1,4 @@
 extern crate mio;
-extern crate byteorder;
 
 use std::{io, result};
 pub use server::Server;
