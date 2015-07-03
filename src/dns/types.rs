@@ -3,11 +3,11 @@ use dns::{DnsError, Result};
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum OpCode {
-    QUERY   = 0x00,
-    IQUERY  = 0x08,
-    STATUS  = 0x10,
-    NOTIFY  = 0x20,
-    UPDATE  = 0x28,
+    QUERY  = 0x00,
+    IQUERY = 0x08,
+    STATUS = 0x10,
+    NOTIFY = 0x20,
+    UPDATE = 0x28,
 }
 
 impl OpCode {
@@ -16,10 +16,10 @@ impl OpCode {
         Ok(match v {
             0x00 => OpCode::QUERY,
             0x08 => OpCode::IQUERY,
-            0x10=> OpCode::STATUS,
+            0x10 => OpCode::STATUS,
             0x20 => OpCode::NOTIFY,
             0x28 => OpCode::UPDATE,
-            _   => return Err(DnsError::BadOpCode),
+            _    => return Err(DnsError::BadOpCode),
         })
     }
 }

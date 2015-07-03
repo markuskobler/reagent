@@ -1,5 +1,7 @@
+use std::net::{SocketAddr};
 use mio;
 use mio::udp::UdpSocket;
+use mio::buf::{SliceBuf, MutSliceBuf};
 //use rustc_serialize::hex::ToHex;
 
 use {Result};
@@ -22,9 +24,9 @@ pub struct Server {
 
 impl Server {
 
-    pub fn new(addr: &str) -> Result<Server> {
+    pub fn new(addr: &SocketAddr) -> Result<Server> {
         Ok(Server{
-            udp_socket: try!(UdpSocket::bind(&addr)),
+            udp_socket: try!(UdpSocket::bound(&addr)),
         })
     }
 
@@ -48,8 +50,8 @@ impl mio::Handler for Server {
         match token {
             SERVER_UDP => {
                 let mut buf = [0; 512];
-                match self.udp_socket.recv_from(&mut buf) {
-                    Ok((_amt, src)) => {
+                match self.udp_socket.recv_from(&mut MutSliceBuf::wrap(&mut buf)) {
+                    Ok(Some(ref src)) => {
                         match Message::unpack(&buf, 0) {
                             Ok(msg) => if !msg.qr {
                                 println!("{}", msg);
@@ -57,7 +59,7 @@ impl mio::Handler for Server {
                                 let msg = Message::new_reply(&msg);
                                 let len = msg.pack(&mut buf, 0).unwrap();
 
-                                match self.udp_socket.send_to(&buf[..len], src) {
+                                match self.udp_socket.send_to(&mut SliceBuf::wrap(&mut buf[..len]), src) {
                                     Err(e) => {
                                         println!("failed to write response {}", e);
                                     }
@@ -73,6 +75,7 @@ impl mio::Handler for Server {
                         }
                         // TODO return error?
                     }
+                    Ok(None) => {}
                     Err(e) => {
                         println!("listener.accept() failed: {}", e);
                     }

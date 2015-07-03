@@ -164,20 +164,22 @@ impl Message {
     }
 
     pub fn new_reply(req: &Message) -> Message {
-        let mut answers = Vec::with_capacity(0);
         let mut questions = Vec::with_capacity(1);
+
+        let mut answers = Vec::with_capacity(0); // TODO remove me
+
         if req.questions.len() > 0 {
             let ref q = req.questions[0];
 
             questions.push(q.clone());
 
+            // TODO hardcoded hack
             let resource = Resource{
                 name: q.name.clone(),
                 rtype: RType::AAAA,
                 class: q.class,
                 ttl: 300,
-//                data: RData::A(0xd8, 0x3a, 0xd0, 0x2e),
-                data: RData::AAAA(0x2a00, 0x1450, 0x4009, 0x080d, 0x0000, 0x0000, 0x0000, 0x2004),
+                data: RData::A(0xd8, 0x3a, 0xd0, 0x2e),
             };
             answers.push(resource);
         }
@@ -236,7 +238,6 @@ impl fmt::Display for Message {
         //     }
         // }
 
-        // TODO
         // if self.authority.len() > 0 {
         //     try!(write!(f, "\n;; AUTHORITY SECTION:\n"));
         //     for a in self.authority.iter() {
