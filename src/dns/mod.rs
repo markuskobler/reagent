@@ -8,10 +8,11 @@ mod macros;
 
 pub mod message;
 pub mod types;
+pub mod rdata;
 
 pub type Result<T> = result::Result<T, DnsError>;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum DnsError {
     ShortRead,
     SmallBuf,
@@ -20,9 +21,8 @@ pub enum DnsError {
     BadRCode,
     BadRType,
     BadClass,
+    BadEscape,
     TooManyCompressionPointers,
     DomainOverflow,
-
-    #[allow(dead_code)]
-    DomainUnderflow, // TODO
+    EmptyLabel,
 }

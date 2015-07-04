@@ -1,11 +1,14 @@
 use std::fmt;
+use std::result;
+use std::str::FromStr;
 use std::ptr::copy_nonoverlapping;
-use dns::{DnsError, Result};
-use dns::types::{Class, OpCode, RCode, RType};
 
-#[allow(dead_code)]
+use super::{DnsError, Result};
+use super::types::{Class, OpCode, RCode, RType};
+use super::rdata::RData;
+
 const MAX_LABEL_LEN: usize = 63;
-const MAX_DOMAIN_LEN: usize = 253;
+const MAX_DOMAIN_LEN: usize = 255;
 
 pub struct Message {
     pub id: u16,
@@ -259,7 +262,7 @@ impl fmt::Display for Message {
 }
 
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct Question {
     pub name: RName,
     pub rtype: RType,
@@ -305,6 +308,19 @@ impl Question {
         }
     }
 
+    pub fn parse(name: &str, rtype: RType, class: Class) -> Result<Question> {
+        Ok(Question{
+            name: try!(name.parse::<RName>()),
+            rtype: rtype,
+            class: class,
+        })
+    }
+}
+
+impl fmt::Debug for Question {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{} {:?} {:?}", self.name, self.class, self.rtype)
+    }
 }
 
 impl fmt::Display for Question {
@@ -335,7 +351,7 @@ impl fmt::Display for Question {
     |                                               |
     +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
  */
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Resource {
     pub name: RName,
     pub rtype: RType,
@@ -378,6 +394,14 @@ impl Resource {
     }
 }
 
+impl fmt::Display for Resource {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}\t{:?}\t{:?}\t{:?}\n", self.name, self.ttl, self.class, self.rtype)
+    }
+}
+
+
+#[derive(PartialEq)]
 pub struct RName {
     inner: Vec<u8>,
 }
@@ -404,7 +428,7 @@ impl RName {
         let mut off1 = offset;
         let mut ptr = 0;
         let mut len = 0;
-        let mut name = [0; MAX_DOMAIN_LEN + 1];
+        let mut name = [0; MAX_DOMAIN_LEN-1]; // Ingore last byte \0
         loop {
             if offset >= maxlen {
                 return Err(DnsError::SmallBuf)
@@ -501,11 +525,96 @@ impl RName {
         }
         unsafe { String::from_utf8_unchecked(buf) }
     }
+}
 
-    // todo
-    // pub fn from_str(name: &str) -> Result<RName> {
-    //
-    // }
+impl FromStr for RName {
+    type Err = DnsError;
+
+    fn from_str(s: &str) -> result::Result<RName, DnsError> {
+        let maxlen = s.len();
+        if maxlen > MAX_DOMAIN_LEN * 4 { // allow for esacped
+            return Err(DnsError::DomainOverflow)
+        } else if maxlen == 0 {
+            return Ok(RName{inner: vec![]})
+        }
+
+        let bytes = s.as_bytes();
+
+        if maxlen == 1 && bytes[0] == b'.' {
+            return Ok(RName{inner: vec![]})
+        }
+
+        let mut name = [0 as u8; MAX_DOMAIN_LEN - 1];
+        let mut off = 1;
+        let mut label = 0;
+        let mut l = 0;
+
+        while l < maxlen {
+            if off > MAX_DOMAIN_LEN - 1 {
+                return Err(DnsError::DomainOverflow)
+            }
+            match bytes[l] {
+                b'.' => {
+                    if label > MAX_LABEL_LEN {
+                        return Err(DnsError::DomainOverflow)
+                    } else if label == 0 {
+                        return Err(DnsError::EmptyLabel)
+                    }
+                    name[off-label-1] = label as u8;
+                    label = 0;
+                }
+                b'\\' => {
+                    l += 1;
+                    if l >= maxlen {
+                        return Err(DnsError::BadEscape)
+                    }
+                    name[off] = match bytes[l] {
+                        n0 @ b'0' ... b'9' => {
+                            if l+2 > maxlen {
+                                return Err(DnsError::BadEscape)
+                            }
+                            l += 1;
+                            let n1 = bytes[l];
+                            if n1 < b'0' || n1 > b'9' {
+                                return Err(DnsError::BadEscape)
+                            }
+                            l += 1;
+                            let n2 = bytes[l];
+                            if n2 < b'0' || n2 > b'9' {
+                                return Err(DnsError::BadEscape)
+                            }
+
+                            (n0 - b'0') * 100 +
+                            (n1 - b'0') * 10 +
+                            (n2 - b'0')
+                        }
+                        b't' => b'\t',
+                        b'r' => b'\r',
+                        b'n' => b'\n',
+                        ech  =>  ech,
+                    };
+                    label += 1;
+                }
+                ch => {
+                    name[off] = ch;
+                    label += 1;
+                }
+            }
+            l += 1;
+            off += 1;
+        }
+        if label == 0 {
+            off -= 1;
+        } else {
+            if label > MAX_LABEL_LEN {
+                return Err(DnsError::DomainOverflow)
+            } else if label == 0 {
+                return Err(DnsError::EmptyLabel)
+            }
+            name[off-label-1] = label as u8;
+        }
+        Ok(RName{inner: name[..off].to_vec()})
+    }
 }
 
 // TODO
@@ -522,6 +631,12 @@ impl Clone for RName {
     }
 }
 
+impl fmt::Debug for RName {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.to_string().fmt(f)
+    }
+}
+
 impl fmt::Display for RName {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.to_string().fmt(f)
@@ -529,101 +644,154 @@ impl fmt::Display for RName {
 }
 
 
-#[derive(Clone)]
-pub enum RData {
-    None,
-    A(u8, u8, u8, u8), // replace with u32
-    AAAA(u16, u16, u16, u16, u16, u16, u16, u16), // replace with u64, u64?
-    RawData(Vec<u8>),
+#[cfg(test)] use rustc_serialize::hex::FromHex;
+#[cfg(test)] use super::DnsError::*;
+
+#[test]
+fn parse_valid_rnames_from_str() {
+    assert_eq!(RName::from_str("").unwrap().inner, vec![]);
+    assert_eq!(RName::from_str(".").unwrap().inner, vec![]);
+
+    assert_eq!(RName::from_str("www.google.com").unwrap().inner,
+               vec![3, b'w', b'w', b'w',
+                    6, b'g', b'o', b'o', b'g', b'l', b'e',
+                    3, b'c', b'o', b'm']);
+
+    assert_eq!(RName::from_str("www.google.com.").unwrap().inner,
+               vec![3, b'w', b'w', b'w',
+                    6, b'g', b'o', b'o', b'g', b'l', b'e',
+                    3, b'c', b'o', b'm']);
+
+    RName::from_str("thelongestdomainnameintheworldandthensomeandthensomemoreandmore.com").unwrap();
+
+    assert_eq!(RName::from_str("\\..").unwrap().inner, vec![1, b'.']);
+    assert_eq!(RName::from_str("\\001.").unwrap().inner, vec![1, 0x01]);
+
+    assert_eq!(RName::from_str("m\\n\\r\\t.com").unwrap().inner,
+               vec![4, b'm', b'\n', b'\r', b'\t',
+                    3, b'c', b'o', b'm']);
+}
+
+#[test]
+fn parse_invalid_rnames_from_str() {
+    assert_eq!(RName::from_str("example..com"), Err(EmptyLabel));
+    assert_eq!(RName::from_str("example.com\\"), Err(BadEscape));
+    assert_eq!(RName::from_str("thelongestinvaliddomainnameintheworldandthensomeandthensomemoreandmore.com"), Err(DomainOverflow));
+
 }
 
 
-impl RData {
+#[test]
+fn unpack_message_requests() {
 
-    #[allow(dead_code)]
-    #[inline]
-    fn len(&self) -> usize {
-        match *self {
-            RData::None => { 0 },
-            RData::A(..) => { 4 },
-            RData::AAAA(..) => { 16 },
-            RData::RawData(ref v) => { v.len() }
-            // todo
-            // CNAME
-            // TXT
-
-
-            // DNAME
-            // INT8
-            // INT16
-            // INT32
-            // STR
-            // APL
-            // B64
-            // B64_EXT
-            // HEX
-            // NSEC
-            // TYPE
-            // CLASS
-            // TIME
-            // PERIOD
-
-            // not sure??
-            // CERT_ALG
-            // ALG
-        }
+    fn unpack(buf: &'static str, id: u16, rcode: RCode, question: Question) {
+        let msg = Message::unpack(&buf.from_hex().unwrap(), 0).unwrap();
+        assert_eq!(msg.id, id);
+        assert_eq!(msg.opcode, OpCode::QUERY);
+        assert_eq!(msg.rcode, rcode);
+        assert_eq!(msg.qr, false);
+        assert_eq!(msg.aa, false);
+        assert_eq!(msg.rd, true);
+        assert_eq!(msg.ra, false);
+        assert_eq!(msg.questions, vec![question]);
+        assert_eq!(msg.answers, vec![]);
+        assert_eq!(msg.authority, vec![]);
+        assert_eq!(msg.additionals, vec![]);
     }
 
-    fn pack(&self, buf: &mut [u8], offset: usize) -> Result<usize> {
-        Ok(match *self {
-            RData::None => offset,
-            RData::A(a1, a2, a3, a4) => {
-                unsafe{
-                    write_be!(buf, offset, 4 as u16, 2);
-                }
-                buf[offset + 2] = a1;
-                buf[offset + 3] = a2;
-                buf[offset + 4] = a3;
-                buf[offset + 5] = a4;
-                offset + 6
-            },
-            RData::AAAA(a1, a2, a3, a4, a5, a6, a7, a8) => {
-                unsafe{
-                    write_be!(buf, offset, 16 as u16, 2);
-                }
-                buf[offset +  2] = (a1 >> 8) as u8;
-                buf[offset +  3] = (a1 & 0xff) as u8;
-                buf[offset +  4] = (a2 >> 8) as u8;
-                buf[offset +  5] = (a2 & 0xff) as u8;
-                buf[offset +  6] = (a3 >> 8) as u8;
-                buf[offset +  7] = (a3 & 0xff) as u8;
-                buf[offset +  8] = (a4 >> 8) as u8;
-                buf[offset +  9] = (a4 & 0xff) as u8;
-                buf[offset + 10] = (a5 >> 8) as u8;
-                buf[offset + 11] = (a5 & 0xff) as u8;
-                buf[offset + 12] = (a6 >> 8) as u8;
-                buf[offset + 13] = (a6 & 0xff) as u8;
-                buf[offset + 14] = (a7 >> 8) as u8;
-                buf[offset + 15] = (a7 & 0xff) as u8;
-                buf[offset + 16] = (a8 >> 8) as u8;
-                buf[offset + 17] = (a8 & 0xff) as u8;
-                offset + 18
-            },
-            RData::RawData(ref v) => {
-                let len = v.len();
-                unsafe {
-                    write_be!(buf, offset, len as u16, 2);
-                    copy_nonoverlapping(v.as_ptr(), buf.as_mut_ptr().offset((offset+2) as isize), len);
-                }
-                offset + 2 + len
-            }
+    // www.bbc.co.uk IN A
+    unpack("0bd001000001000000000000037777770362626302636f02756b0000010001",
+           3024,
+           RCode::NOERROR,
+           Question::parse("www.bbc.co.uk", RType::A, Class::IN).unwrap());
 
-        })
-    }
+    // www.reddit.com IN A
+    unpack("f13a01000001000000000000037777770672656464697403636f6d0000010001",
+           61754,
+           RCode::NOERROR,
+           Question::parse("www.reddit.com", RType::A, Class::IN).unwrap());
 
-    // fn unpack(rtype: RType, msg: &[u8], mut off: usize) -> Result<(RName, usize)> {
-    // }
+    // www.google.com IN A
+    unpack("2b22010000010000000000000377777706676f6f676c6503636f6d0000010001",
+           11042,
+           RCode::NOERROR,
+           Question::parse("www.google.com", RType::A, Class::IN).unwrap());
+
+    // google.com           IN MX
+    // google.com           IN AAAA
+    // google.com           IN ANY
+    // www.microsoft.com    IN SOA
+    // non.existent.domain. IN A
 }
 
-// todo tests
-// 0ab0010000010000000000000377777706676f6f676c6503636f6d0000010001
+#[test]
+fn unpack_message_responses() {
+
+    let msg = Message::unpack(&"2b22818000010001000000000377777706676f6f676c6503636f6d0000010001c00c00010001000000bc0004d83ad044".from_hex().unwrap(), 0).unwrap();
+    assert_eq!(msg.id, 11042 as u16);
+    assert_eq!(msg.opcode, OpCode::QUERY);
+    assert_eq!(msg.rcode, RCode::NOERROR);
+    assert_eq!(msg.qr, true);
+    assert_eq!(msg.aa, false);
+    assert_eq!(msg.rd, true);
+    assert_eq!(msg.ra, true);
+    assert_eq!(msg.questions.len(), 1);
+    assert_eq!(msg.answers.len(), 1);
+    assert_eq!(msg.authority.len(), 0);
+    assert_eq!(msg.additionals.len(), 0);
+
+    // ;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 11042
+    // ;; flags: qr rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 0
+    // ;; QUESTION SECTION:
+    // ;www.google.com.			IN	A
+    // ;; ANSWER SECTION:
+    // www.google.com.		188	IN	A	216.58.208.68
+
+    // ;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 3024
+    // ;; flags: qr rd ra; QUERY: 1, ANSWER: 3, AUTHORITY: 0, ADDITIONAL: 0
+    // ;; QUESTION SECTION:
+    // ;www.bbc.co.uk.			IN	A
+    // ;; ANSWER SECTION:
+    // www.bbc.co.uk.		167	IN	CNAME	www.bbc.net.uk.
+    // www.bbc.net.uk.		58	IN	A	212.58.244.70
+    // www.bbc.net.uk.		58	IN	A	212.58.244.71
+    let msg = Message::unpack(&"0bd081800001000300000000037777770362626302636f02756b0000010001c00c00050001000000a7000e0377777703626263036e6574c017c02b000100010000003a0004d43af446c02b000100010000003a0004d43af447".from_hex().unwrap(), 0).unwrap();
+    assert_eq!(msg.id, 3024 as u16);
+    assert_eq!(msg.opcode, OpCode::QUERY);
+    assert_eq!(msg.rcode, RCode::NOERROR);
+    assert_eq!(msg.qr, true);
+    assert_eq!(msg.aa, false);
+    assert_eq!(msg.rd, true);
+    assert_eq!(msg.ra, true);
+    assert_eq!(msg.questions.len(), 1);
+    assert_eq!(msg.answers.len(), 3);
+    assert_eq!(msg.authority.len(), 0);
+    assert_eq!(msg.additionals.len(), 0);
+
+
+    // dig www.redit.com
+    let msg = Message::unpack(&"f13a81800001000f00000000037777770672656464697403636f6d0000010001c00c000100010000012b0004c629d18fc00c000100010000012b0004c629d18dc00c000100010000012b0004c629d08ec00c000100010000012b0004c629d08bc00c000100010000012b0004c629d188c00c000100010000012b0004c629d08cc00c000100010000012b0004c629d08fc00c000100010000012b0004c629d18bc00c000100010000012b0004c629d18ac00c000100010000012b0004c629d189c00c000100010000012b0004c629d089c00c000100010000012b0004c629d08ac00c000100010000012b0004c629d18ec00c000100010000012b0004c629d18cc00c000100010000012b0004c629d08d".from_hex().unwrap(), 0).unwrap();
+    assert_eq!(msg.id, 61754 as u16);
+    assert_eq!(msg.opcode, OpCode::QUERY);
+    assert_eq!(msg.rcode, RCode::NOERROR);
+    assert_eq!(msg.qr, true);
+    assert_eq!(msg.aa, false);
+    assert_eq!(msg.rd, true);
+    assert_eq!(msg.ra, true);
+    assert_eq!(msg.questions.len(), 1);
+    assert_eq!(msg.answers.len(), 15);
+    assert_eq!(msg.authority.len(), 0);
+    assert_eq!(msg.additionals.len(), 0);
+}
+
+#[test]
+#[ignore]
+fn pack_message_requests() {
+
+}
+
+#[test]
+#[ignore]
+fn pack_message_responses() {
+
+}

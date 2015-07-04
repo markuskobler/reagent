@@ -70,10 +70,9 @@ impl mio::Handler for Server {
                                 println!("Error got response {}", msg.qr);
                             },
                             Err(e) => {
-                                println!("failed {:?}", e);
+                                println!("failed to parse {:?}", e);
                             }
                         }
-                        // TODO return error?
                     }
                     Ok(None) => {}
                     Err(e) => {

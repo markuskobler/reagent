@@ -1,5 +1,8 @@
 extern crate mio;
 
+#[cfg(test)]
+extern crate rustc_serialize;
+
 use std::{io, result};
 pub use server::Server;
 

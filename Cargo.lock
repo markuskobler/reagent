@@ -4,6 +4,7 @@ version = "0.1.0"
 dependencies = [
  "log 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "mio 0.4.0 (git+https://github.com/carllerche/mio)",
+ "rustc-serialize 0.3.15 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -40,10 +41,11 @@ dependencies = [
 [[package]]
 name = "mio"
 version = "0.4.0"
-source = "git+https://github.com/carllerche/mio#57d41bb6a52c83a2d2614f3a278ece75fd723020"
+source = "git+https://github.com/carllerche/mio#80daf1b66d10701517359f8c5588e97959dc569f"
 dependencies = [
  "bytes 0.2.9 (registry+https://github.com/rust-lang/crates.io-index)",
  "clock_ticks 0.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
+ "libc 0.1.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "nix 0.3.8 (git+https://github.com/carllerche/nix-rust)",
  "slab 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -53,11 +55,16 @@ dependencies = [
 [[package]]
 name = "nix"
 version = "0.3.8"
-source = "git+https://github.com/carllerche/nix-rust#90bbc63646991ae4b092da60bdcbaef01637cb04"
+source = "git+https://github.com/carllerche/nix-rust#a0fc60700f9e8b93e570e51460b10201f721b635"
 dependencies = [
  "bitflags 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "libc 0.1.8 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
+
+[[package]]
+name = "rustc-serialize"
+version = "0.3.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "slab"

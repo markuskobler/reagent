@@ -12,9 +12,11 @@ doc     = false
 name = "tests"
 
 [dependencies]
-#mio = "0.3"
 log = "0.3"
 
 [dependencies.mio]
 git = "https://github.com/carllerche/mio"
 branch = "master"
+
+[dev-dependencies]
+rustc-serialize = "0.3"

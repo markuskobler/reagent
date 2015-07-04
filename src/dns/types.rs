@@ -99,7 +99,7 @@ impl Class {
 }
 
 #[repr(u16)]
-#[derive(Debug,Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum RType {
     NONE       = 0x0000,
     A          = 0x0001,
