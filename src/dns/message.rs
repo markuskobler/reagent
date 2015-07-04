@@ -2,6 +2,7 @@ use std::fmt;
 use std::result;
 use std::str::FromStr;
 use std::ptr::copy_nonoverlapping;
+use std::iter::FromIterator;
 
 use super::{DnsError, Result};
 use super::types::{Class, OpCode, RCode, RType};
@@ -179,7 +180,7 @@ impl Message {
             // TODO hardcoded hack
             let resource = Resource{
                 name: q.name.clone(),
-                rtype: RType::AAAA,
+                rtype: RType::A,
                 class: q.class,
                 ttl: 300,
                 data: RData::A(0xd8, 0x3a, 0xd0, 0x2e),
@@ -222,8 +223,8 @@ impl fmt::Display for Message {
         try!(write!(f, "; QUERY: {}, ANSWER: {}, AUTHORITY: {}, ADDITIONAL: {}\n",
                     self.questions.len(),
                     self.answers.len(),
-                    0,   // todo
-                    0)); // todo
+                    self.authority.len(),
+                    self.additionals.len()));
 
         if self.questions.len() > 0 {
             try!(write!(f, "\n;; QUESTION SECTION:\n"));
@@ -233,29 +234,29 @@ impl fmt::Display for Message {
             }
         }
 
-        // if self.answers.len() > 0 {
-        //     try!(write!(f, "\n;; ANSWER SECTION:\n"));
-        //     for a in self.answers.iter() {
-        //         try!(write!(f, ";"));
-        //         try!(a.fmt(f));
-        //     }
-        // }
+        if self.answers.len() > 0 {
+            try!(write!(f, "\n;; ANSWER SECTION:\n"));
+            for a in self.answers.iter() {
+                try!(write!(f, ";"));
+                try!(a.fmt(f));
+            }
+        }
 
-        // if self.authority.len() > 0 {
-        //     try!(write!(f, "\n;; AUTHORITY SECTION:\n"));
-        //     for a in self.authority.iter() {
-        //         try!(write!(f, ";"));
-        //         try!(a.fmt(f));
-        //     }
-        // }
+        if self.authority.len() > 0 {
+            try!(write!(f, "\n;; AUTHORITY SECTION:\n"));
+            for a in self.authority.iter() {
+                try!(write!(f, ";"));
+                try!(a.fmt(f));
+            }
+        }
 
-        // if self.additionals.len() > 0 {
-        //     try!(write!(f, "\n;; ADDITIONAL SECTION:\n"));
-        //     for a in self.additionals.iter() {
-        //         try!(write!(f, ";"));
-        //         try!(a.fmt(f));
-        //     }
-        // }
+        if self.additionals.len() > 0 {
+            try!(write!(f, "\n;; ADDITIONAL SECTION:\n"));
+            for a in self.additionals.iter() {
+                try!(write!(f, ";"));
+                try!(a.fmt(f));
+            }
+        }
 
         Ok(())
    }
@@ -308,6 +309,7 @@ impl Question {
         }
     }
 
+    #[allow(dead_code)] // ???
     pub fn parse(name: &str, rtype: RType, class: Class) -> Result<Question> {
         Ok(Question{
             name: try!(name.parse::<RName>()),
@@ -383,13 +385,14 @@ impl Resource {
         let rdlength = unsafe { read_be!(msg, offset + 8, u16) };
 
         // todo parse data type
+        let data = RData::RawData(vec![]);
 
         Ok((Resource{
             name: name,
             rtype: rtype,
             class: class,
             ttl: ttl,
-            data: RData::RawData(vec![]), // todo?
+            data: data,
         }, offset + 10 + rdlength as usize))
     }
 }
@@ -407,6 +410,11 @@ pub struct RName {
 }
 
 impl RName {
+
+    #[allow(dead_code)]
+    pub fn to_vec(&self) -> Vec<String> {
+        Vec::from_iter(self.into_iter())
+    }
 
     #[inline]
     pub fn len(&self) -> usize { self.inner.len() }
@@ -485,38 +493,7 @@ impl RName {
         } else {
             let mut off = 0;
             while off < maxlen {
-                let l = name[off] as usize + off + 1;
-                off += 1;
-                while off < l {
-                    match name[off] {
-                        b'\t' => { buf.push(b'\\'); buf.push(b't'); }
-                        b'\r' => { buf.push(b'\\'); buf.push(b'r'); }
-                        b'\n' => { buf.push(b'\\'); buf.push(b'n'); }
-                        c @ b'.' | c @ b'(' | c @ b')' | c @ b';' | c @ b' ' | c @ b'@' | c @ b'"' | c @ b'\\' => {
-                            buf.push(b'\\'); buf.push(c);
-                        }
-                        c @ 0...9 => {
-                            buf.push(b'\\');
-                            buf.push(b'0');
-                            buf.push(b'0');
-                            buf.push(b'0' + (c % 10));
-                        }
-                        c @ 10...32 => {
-                            buf.push(b'\\');
-                            buf.push(b'0');
-                            buf.push(b'0' + ((c / 10) % 10));
-                            buf.push(b'0' + (c % 10));
-                        }
-                        c @ 127...255 => {
-                            buf.push(b'\\');
-                            buf.push(b'0' + ((c / 100) % 10));
-                            buf.push(b'0' + ((c / 10) % 10));
-                            buf.push(b'0' + (c % 10));
-                        }
-                        c => { buf.push(c); }
-                    }
-                    off += 1;
-                }
+                off = write_label(&mut buf, &name, off + 1, name[off] as usize);
                 buf.push(b'.');
             }
             if buf.capacity() > buf.len() + 5 {
@@ -545,8 +522,8 @@ impl FromStr for RName {
         }
 
         let mut name = [0 as u8; MAX_DOMAIN_LEN - 1];
-        let mut off = 1;
         let mut label = 0;
+        let mut off = 1;
         let mut l = 0;
 
         while l < maxlen {
@@ -617,13 +594,77 @@ impl FromStr for RName {
     }
 }
 
-// TODO
-// impl Iterator for RName {
-//     type Item = String;
-//     fn next(&self) -> Option<String> {
-//         None()
-//     }
-// }
+pub struct RNameIter<'a> {
+    name: &'a [u8],
+    off: usize,
+}
+
+impl<'a> Iterator for RNameIter<'a> {
+    type Item = String;
+
+    fn next(&mut self) -> Option<String> {
+        let pos = self.off;
+        if pos >= self.name.len() {
+            return None
+        }
+        let label = self.name[pos] as usize;
+        let mut buf = Vec::with_capacity(label);
+
+        self.off = write_label(&mut buf, &self.name, pos + 1, label);
+
+        Some(unsafe { String::from_utf8_unchecked( buf ) })
+    }
+}
+
+
+#[inline]
+fn write_label(buf: &mut Vec<u8>, name: &[u8], mut off: usize, mut len: usize) -> usize {
+    len += off;
+
+    while off < len {
+        match name[off] {
+            b'\t' => { buf.push(b'\\'); buf.push(b't'); }
+            b'\r' => { buf.push(b'\\'); buf.push(b'r'); }
+            b'\n' => { buf.push(b'\\'); buf.push(b'n'); }
+            c @ b'.' | c @ b'(' | c @ b')' | c @ b';' | c @ b' ' | c @ b'@' | c @ b'"' | c @ b'\\' => {
+                buf.push(b'\\'); buf.push(c);
+            }
+            c @ 0...9 => {
+                buf.push(b'\\');
+                buf.push(b'0');
+                buf.push(b'0');
+                buf.push(b'0' + (c % 10));
+            }
+            c @ 10...32 => {
+                buf.push(b'\\');
+                buf.push(b'0');
+                buf.push(b'0' + ((c / 10) % 10));
+                buf.push(b'0' + (c % 10));
+            }
+            c @ 127...255 => {
+                buf.push(b'\\');
+                buf.push(b'0' + ((c / 100) % 10));
+                buf.push(b'0' + ((c / 10) % 10));
+                buf.push(b'0' + (c % 10));
+            }
+            c => { buf.push(c); }
+        }
+        off += 1;
+    }
+
+    off
+}
+
+
+
+impl<'a> IntoIterator for &'a RName {
+    type Item = String;
+    type IntoIter = RNameIter<'a>;
+
+    fn into_iter(self) -> RNameIter<'a> {
+        RNameIter{ name: &self.inner, off: 0 }
+    }
+}
 
 impl Clone for RName {
     fn clone(&self) -> Self {
@@ -642,7 +683,6 @@ impl fmt::Display for RName {
         self.to_string().fmt(f)
     }
 }
-
 
 #[cfg(test)] use rustc_serialize::hex::FromHex;
 #[cfg(test)] use super::DnsError::*;
@@ -678,6 +718,14 @@ fn parse_invalid_rnames_from_str() {
     assert_eq!(RName::from_str("example.com\\"), Err(BadEscape));
     assert_eq!(RName::from_str("thelongestinvaliddomainnameintheworldandthensomeandthensomemoreandmore.com"), Err(DomainOverflow));
 
+}
+
+#[test]
+fn iterate_rnames() {
+    assert_eq!(RName::from_str("www.google.com").unwrap().to_vec(),
+               vec!["www".to_string(),
+                    "google".to_string(),
+                    "com".to_string()])
 }
 
 
