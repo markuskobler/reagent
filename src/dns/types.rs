@@ -38,7 +38,7 @@ pub enum RCode {
     NXRRSET  = 0x08,
     NOTAUTH  = 0x09,
     NOTZONE  = 0x0a,
-    BADSIG   = 0x10, // or BADVERS ??
+    BADSIG   = 0x10, // or BADVERS
     BADKEY   = 0x11,
     BADTIME  = 0x12,
     BADMODE  = 0x13,
@@ -101,7 +101,7 @@ impl Class {
 #[repr(u16)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum RType {
-    NONE       = 0x0000,
+    ZERO       = 0x0000,
     A          = 0x0001,
     NS         = 0x0002,
     MD         = 0x0003,
@@ -179,7 +179,7 @@ pub enum RType {
     AXFR       = 0x00FC,
     MAILB      = 0x00FD,
     MAILA      = 0x00FE,
-    ANY        = 0x00FF,
+//    ANY        = 0x00FF,
 
     URI        = 0x0100,
     CAA        = 0x0101,
@@ -192,7 +192,7 @@ impl RType {
     #[inline]
     pub fn unpack(v: u16) -> Result<RType> {
         Ok(match v {
-            0x0000 => RType::NONE, // check if valid?
+            0x0000 => RType::ZERO,
             0x0001 => RType::A,
             0x0002 => RType::NS,
             0x0003 => RType::MD,
@@ -271,7 +271,7 @@ impl RType {
             0x00FC => RType::AXFR,
             0x00FD => RType::MAILB,
             0x00FE => RType::MAILA,
-            0x00FF => RType::ANY,
+//            0x00FF => RType::ANY,
 
             0x0100 => RType::URI,
             0x0101 => RType::CAA,
