@@ -1,11 +1,6 @@
-#![allow(dead_code)] // TODO remove
-
 use std::fmt;
 
-use super::{DnsError, Result, Class, OpCode, RCode, RType, RName, RData};
-
-const MAX_LABEL_LEN: usize = 63;
-const MAX_DOMAIN_LEN: usize = 255;
+use dns::{Error, Result, Class, OpCode, RCode, RType, RName, RData};
 
 pub struct Message {
     pub id: u16,
@@ -44,7 +39,7 @@ impl Message {
 
     pub fn pack(&self, buf: &mut [u8], mut offset: usize) -> Result<usize> {
         if buf.len() < 12 {
-            return Err(DnsError::SmallBuf)
+            return Err(Error::SmallBuf)
         }
 
         // ID
@@ -82,7 +77,7 @@ impl Message {
 
     pub fn unpack(msg: &[u8], mut offset: usize) -> Result<Message> { // TODO return remaining buffer?
         if msg.len() < 12 {
-            return Err(DnsError::ShortRead)
+            return Err(Error::ShortRead)
         }
 
         let id = unsafe{ read_be!(msg, offset, u16) };
@@ -285,7 +280,7 @@ impl Question {
     fn pack(&self, buf: &mut [u8], offset: usize) -> Result<usize> {
         let offset = try!(self.name.pack(buf, offset));
         if offset + 4 > buf.len() {
-            return Err(DnsError::SmallBuf)
+            return Err(Error::SmallBuf)
         }
         unsafe {
             write_be!(buf, offset, self.rtype as u16, 2);
@@ -307,6 +302,7 @@ impl Question {
         }
     }
 
+    #[allow(dead_code)]
     pub fn parse(name: &str, rtype: RType, class: Class) -> Result<Question> {
         Ok(Question{
             name: try!(name.parse::<RName>()),
@@ -364,7 +360,7 @@ impl Resource {
     fn pack(&self, buf: &mut [u8], mut offset: usize) -> Result<usize> {
         offset = try!(self.name.pack(buf, offset));
         if offset + 8 > buf.len() {
-            return Err(DnsError::SmallBuf)
+            return Err(Error::SmallBuf)
         }
         unsafe {
             write_be!(buf, offset, self.rtype as u16, 2);
@@ -397,6 +393,7 @@ impl Resource {
         }, offset + 10 + rdlength as usize))
     }
 
+    #[allow(dead_code)]
     pub fn parse(name: &str, rtype: RType, class: Class, ttl: u32) -> Result<Resource> {
         Ok(Resource{
             name: try!(name.parse::<RName>()),
@@ -416,11 +413,21 @@ impl fmt::Display for Resource {
 
 
 #[cfg(test)] use rustc_serialize::hex::FromHex;
-#[cfg(test)] use super::DnsError::*;
+#[cfg(test)] use super::Error::*;
 #[cfg(test)] use super::OpCode::*;
 #[cfg(test)] use super::RCode::*;
 #[cfg(test)] use super::RType::*;
 #[cfg(test)] use super::Class::*;
+
+#[cfg(test)]
+fn q(name: &str, rtype: RType, class: Class) -> Question {
+    Question::parse(name, rtype, class).unwrap()
+}
+
+#[cfg(test)]
+fn r(name: &str, rtype: RType, class: Class, ttl: u32) -> Resource {
+    Resource::parse(name, rtype, class, ttl).unwrap()
+}
 
 #[test]
 fn unpack_message_requests() {
@@ -444,25 +451,31 @@ fn unpack_message_requests() {
     unpack("0bd001000001000000000000037777770362626302636f02756b0000010001",
            3024,
            NOERROR,
-           Question::parse("www.bbc.co.uk", A, IN).unwrap());
+           q("www.bbc.co.uk", A, IN));
 
     // www.reddit.com IN A
     unpack("f13a01000001000000000000037777770672656464697403636f6d0000010001",
            61754,
            NOERROR,
-           Question::parse("www.reddit.com", A, IN).unwrap());
+           q("www.reddit.com", A, IN));
 
     // www.google.com IN A
     unpack("2b22010000010000000000000377777706676f6f676c6503636f6d0000010001",
            11042,
            NOERROR,
-           Question::parse("www.google.com", A, IN).unwrap());
+           q("www.google.com", A, IN));
 
     // google.com           IN MX
     // google.com           IN AAAA
     // google.com           IN ANY
     // www.microsoft.com    IN SOA
     // non.existent.domain. IN A
+
+    // dig www.google.com with AD set
+    // unpack("33be012000010000000000010377777706676f6f676c6503636f6d00000100010000291000000000000000",
+    //        13246,
+    //        NOERROR,
+    //        Question::parse("www.google.com", A, IN));
 }
 
 #[test]
@@ -483,55 +496,48 @@ fn unpack_message_responses() {
         assert_eq!(msg.additionals, vec![]);
     }
 
-    // ;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 11042
-    // ;; flags: qr rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 0
-    // ;; QUESTION SECTION:
-    // ;www.google.com.			IN	A
-    // ;; ANSWER SECTION:
+    // dig www.google.com.
+    //
     // www.google.com.		188	IN	A	216.58.208.68
     unpack("2b22818000010001000000000377777706676f6f676c6503636f6d0000010001c00c00010001000000bc0004d83ad044",
            11042,
            NOERROR,
-           Question::parse("www.google.com", A, IN).unwrap(),
-           vec![Resource::parse("www.google.com", A, IN, 188).unwrap()]);
+           q("www.google.com", A, IN),
+           vec![r("www.google.com", A, IN, 188)]);
 
-    // ;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 3024
-    // ;; flags: qr rd ra; QUERY: 1, ANSWER: 3, AUTHORITY: 0, ADDITIONAL: 0
-    // ;; QUESTION SECTION:
-    // ;www.bbc.co.uk.			IN	A
-    // ;; ANSWER SECTION:
+    // dig www.bbc.co.uk.
+    //
     // www.bbc.co.uk.		167	IN	CNAME	www.bbc.net.uk.
     // www.bbc.net.uk.		58	IN	A	212.58.244.70
     // www.bbc.net.uk.		58	IN	A	212.58.244.71
     unpack("0bd081800001000300000000037777770362626302636f02756b0000010001c00c00050001000000a7000e0377777703626263036e6574c017c02b000100010000003a0004d43af446c02b000100010000003a0004d43af447",
            3024,
            NOERROR,
-           Question::parse("www.bbc.co.uk", A, IN).unwrap(),
-           vec![Resource::parse("www.bbc.co.uk", CNAME, IN, 167).unwrap(),
-                Resource::parse("www.bbc.net.uk", A, IN, 58).unwrap(),
-                Resource::parse("www.bbc.net.uk", A, IN, 58).unwrap()]);
+           q("www.bbc.co.uk", A, IN),
+           vec![r("www.bbc.co.uk", CNAME, IN, 167),
+                r("www.bbc.net.uk", A, IN, 58),
+                r("www.bbc.net.uk", A, IN, 58)]);
 
     // dig www.reddit.com
     unpack("f13a81800001000f00000000037777770672656464697403636f6d0000010001c00c000100010000012b0004c629d18fc00c000100010000012b0004c629d18dc00c000100010000012b0004c629d08ec00c000100010000012b0004c629d08bc00c000100010000012b0004c629d188c00c000100010000012b0004c629d08cc00c000100010000012b0004c629d08fc00c000100010000012b0004c629d18bc00c000100010000012b0004c629d18ac00c000100010000012b0004c629d189c00c000100010000012b0004c629d089c00c000100010000012b0004c629d08ac00c000100010000012b0004c629d18ec00c000100010000012b0004c629d18cc00c000100010000012b0004c629d08d",
            61754,
            NOERROR,
-           Question::parse("www.reddit.com", A, IN).unwrap(),
-           vec![Resource::parse("www.reddit.com", A, IN, 299).unwrap(),
-                Resource::parse("www.reddit.com", A, IN, 299).unwrap(),
-                Resource::parse("www.reddit.com", A, IN, 299).unwrap(),
-                Resource::parse("www.reddit.com", A, IN, 299).unwrap(),
-                Resource::parse("www.reddit.com", A, IN, 299).unwrap(),
-                Resource::parse("www.reddit.com", A, IN, 299).unwrap(),
-                Resource::parse("www.reddit.com", A, IN, 299).unwrap(),
-                Resource::parse("www.reddit.com", A, IN, 299).unwrap(),
-                Resource::parse("www.reddit.com", A, IN, 299).unwrap(),
-                Resource::parse("www.reddit.com", A, IN, 299).unwrap(),
-                Resource::parse("www.reddit.com", A, IN, 299).unwrap(),
-                Resource::parse("www.reddit.com", A, IN, 299).unwrap(),
-                Resource::parse("www.reddit.com", A, IN, 299).unwrap(),
-                Resource::parse("www.reddit.com", A, IN, 299).unwrap(),
-                Resource::parse("www.reddit.com", A, IN, 299).unwrap()]);
-
+           q("www.reddit.com", A, IN),
+           vec![r("www.reddit.com", A, IN, 299),
+                r("www.reddit.com", A, IN, 299),
+                r("www.reddit.com", A, IN, 299),
+                r("www.reddit.com", A, IN, 299),
+                r("www.reddit.com", A, IN, 299),
+                r("www.reddit.com", A, IN, 299),
+                r("www.reddit.com", A, IN, 299),
+                r("www.reddit.com", A, IN, 299),
+                r("www.reddit.com", A, IN, 299),
+                r("www.reddit.com", A, IN, 299),
+                r("www.reddit.com", A, IN, 299),
+                r("www.reddit.com", A, IN, 299),
+                r("www.reddit.com", A, IN, 299),
+                r("www.reddit.com", A, IN, 299),
+                r("www.reddit.com", A, IN, 299)]);
 
 }
 

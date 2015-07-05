@@ -1,6 +1,6 @@
 use std::ptr::copy_nonoverlapping;
 
-use super::{Result};
+use dns::Result;
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum RData {

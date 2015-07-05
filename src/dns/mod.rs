@@ -1,5 +1,4 @@
-#[allow(unused_imports)]
-use std::{io, result};
+use std::result;
 
 pub use dns::types::{OpCode, RCode, RType, Class};
 pub use dns::rname::RName;
@@ -14,10 +13,13 @@ pub mod rname;
 pub mod rdata;
 pub mod message;
 
-pub type Result<T> = result::Result<T, DnsError>;
+const MAX_LABEL_LEN: usize = 63;
+const MAX_DOMAIN_LEN: usize = 255;
 
-#[derive(Debug, PartialEq)]
-pub enum DnsError {
+pub type Result<T> = result::Result<T, Error>;
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Error {
     ShortRead,
     SmallBuf,
     BadOpCode,

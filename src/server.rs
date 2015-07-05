@@ -33,8 +33,15 @@ impl Server {
     pub fn run(&mut self) -> Result<()> {
         println!("Listening on {}", self.udp_socket.local_addr().unwrap());
 
-        let mut evloop = try!(mio::EventLoop::<Server>::new());
-        try!(evloop.register(&self.udp_socket, SERVER_UDP));
+        let mut config = mio::EventLoopConfig::default();
+        config.io_poll_timeout_ms = 10_000;
+        config.timer_tick_ms = 1_000;
+
+        let mut evloop = try!(mio::EventLoop::<Server>::configured(config));
+        try!(evloop.register_opt(&self.udp_socket,
+                                 SERVER_UDP,
+                                 mio::Interest::all(),
+                                 mio::PollOpt::edge()));
         try!(evloop.run(self));
 
         Ok(())

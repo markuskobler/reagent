@@ -1,0 +1,21 @@
+machine:
+  services:
+    - docker
+
+dependencies:
+  pre:
+    - docker info
+  override:
+    - docker run -it --name reagent -v /home/ubuntu/reagent:/rust -v /root --entrypoint /usr/local/bin/cargo quay.io/markus/rust-lang build
+    - docker run -it --volumes-from reagent -v /home/ubuntu/reagent:/rust -v /root --entrypoint /usr/local/bin/cargo quay.io/markus/rust-lang build --release
+
+test:
+  override:
+    - docker run -it --volumes-from reagent --entrypoint /usr/local/bin/cargo quay.io/markus/rust-lang test
+    - docker run -it --volumes-from reagent --entrypoint /usr/local/bin/cargo quay.io/markus/rust-lang bench
+    - docker run -it --volumes-from reagent --entrypoint /usr/local/bin/kcov quay.io/markus/rust-lang --exclude-pattern=/root/.cargo target/kcov target/debug/reagent-*
+
+general:
+  artifacts:
+    - "/home/ubuntu/reagent/target/release/reagent"
+    - "/home/ubuntu/reagent/target/kcov"

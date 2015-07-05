@@ -1,15 +1,11 @@
-#![allow(dead_code)] // TODO remove
-
 use std::fmt;
 use std::result;
 use std::ptr::copy_nonoverlapping;
 use std::iter::FromIterator;
 use std::str::FromStr;
 
-use super::{Result, DnsError};
-
-const MAX_LABEL_LEN: usize = 63;
-const MAX_DOMAIN_LEN: usize = 255;
+use dns::{Result, Error};
+use dns::{MAX_LABEL_LEN, MAX_DOMAIN_LEN};
 
 #[derive(PartialEq)]
 pub struct RName {
@@ -18,17 +14,18 @@ pub struct RName {
 
 impl RName {
 
+    #[inline]
+    pub fn len(&self) -> usize { self.inner.len() }
+
+    #[allow(dead_code)]
     pub fn to_vec(&self) -> Vec<String> {
         Vec::from_iter(self.into_iter())
     }
 
-    #[inline]
-    pub fn len(&self) -> usize { self.inner.len() }
-
     pub fn pack(&self, buf: &mut [u8], offset: usize) -> Result<usize> {
         let len = self.len();
         if len + 1 > buf.len() {
-            return Err(DnsError::SmallBuf)
+            return Err(Error::SmallBuf)
         }
         unsafe {
             copy_nonoverlapping(self.inner.as_ptr(), buf.as_mut_ptr().offset(offset as isize), len);
@@ -45,7 +42,7 @@ impl RName {
         let mut name = [0; MAX_DOMAIN_LEN-1]; // Ingore last byte \0
         loop {
             if offset >= maxlen {
-                return Err(DnsError::SmallBuf)
+                return Err(Error::SmallBuf)
             }
             let c = msg[offset] as usize;
             offset += 1;
@@ -54,9 +51,9 @@ impl RName {
                     if c == 0 {
                         break
                     } else if len + c > MAX_DOMAIN_LEN {
-                        return Err(DnsError::DomainOverflow)
+                        return Err(Error::DomainOverflow)
                     } else if offset + c >= maxlen {
-                        return Err(DnsError::SmallBuf)
+                        return Err(Error::SmallBuf)
                     }
                     unsafe {
                         copy_nonoverlapping(msg.as_ptr().offset((offset-1) as isize),
@@ -68,7 +65,7 @@ impl RName {
                 }
                 0xc0 => { // compressed response
                     if offset >= maxlen {
-                        return Err(DnsError::SmallBuf)
+                        return Err(Error::SmallBuf)
                     }
                     let c1 = msg[offset] as usize;
                     offset += 1;
@@ -78,10 +75,10 @@ impl RName {
                     offset = (c^0xc0) << 8 | c1;
                     ptr += 1;
                     if ptr > 100 { // prevent endless pointer recursion
-                        return Err(DnsError::TooManyCompressionPointers)
+                        return Err(Error::TooManyCompressionPointers)
                     }
                 }
-                _ => return Err(DnsError::BadRdata),
+                _ => return Err(Error::BadRdata),
             }
         }
         if ptr == 0 {
@@ -111,12 +108,12 @@ impl RName {
 }
 
 impl FromStr for RName {
-    type Err = DnsError;
+    type Err = Error;
 
-    fn from_str(s: &str) -> result::Result<RName, DnsError> {
+    fn from_str(s: &str) -> result::Result<RName, Error> {
         let maxlen = s.len();
         if maxlen > MAX_DOMAIN_LEN * 4 { // allow for esacped
-            return Err(DnsError::DomainOverflow)
+            return Err(Error::DomainOverflow)
         } else if maxlen == 0 {
             return Ok(RName{inner: vec![]})
         }
@@ -134,14 +131,14 @@ impl FromStr for RName {
 
         while l < maxlen {
             if off > MAX_DOMAIN_LEN - 1 {
-                return Err(DnsError::DomainOverflow)
+                return Err(Error::DomainOverflow)
             }
             match bytes[l] {
                 b'.' => {
                     if label > MAX_LABEL_LEN {
-                        return Err(DnsError::DomainOverflow)
+                        return Err(Error::DomainOverflow)
                     } else if label == 0 {
-                        return Err(DnsError::EmptyLabel)
+                        return Err(Error::EmptyLabel)
                     }
                     name[off-label-1] = label as u8;
                     label = 0;
@@ -149,22 +146,22 @@ impl FromStr for RName {
                 b'\\' => {
                     l += 1;
                     if l >= maxlen {
-                        return Err(DnsError::BadEscape)
+                        return Err(Error::BadEscape)
                     }
                     name[off] = match bytes[l] {
                         n0 @ b'0' ... b'9' => {
                             if l+2 > maxlen {
-                                return Err(DnsError::BadEscape)
+                                return Err(Error::BadEscape)
                             }
                             l += 1;
                             let n1 = bytes[l];
                             if n1 < b'0' || n1 > b'9' {
-                                return Err(DnsError::BadEscape)
+                                return Err(Error::BadEscape)
                             }
                             l += 1;
                             let n2 = bytes[l];
                             if n2 < b'0' || n2 > b'9' {
-                                return Err(DnsError::BadEscape)
+                                return Err(Error::BadEscape)
                             }
 
                             (n0 - b'0') * 100 +
@@ -190,9 +187,9 @@ impl FromStr for RName {
             off -= 1;
         } else {
             if label > MAX_LABEL_LEN {
-                return Err(DnsError::DomainOverflow)
+                return Err(Error::DomainOverflow)
             } else if label == 0 {
-                return Err(DnsError::EmptyLabel)
+                return Err(Error::EmptyLabel)
             }
             name[off-label-1] = label as u8;
         }
@@ -288,7 +285,7 @@ impl fmt::Display for RName {
     }
 }
 
-#[cfg(test)] use super::DnsError::*;
+#[cfg(test)] use super::Error::*;
 
 #[test]
 fn parse_valid_rnames_from_str() {

@@ -14,7 +14,7 @@ pub type Result<T> = result::Result<T, Error>;
 #[derive(Debug)]
 pub enum Error {
     Io(io::Error),
-    Dns(dns::DnsError),
+    Dns(dns::Error),
 }
 
 impl From<io::Error> for Error {
@@ -23,8 +23,8 @@ impl From<io::Error> for Error {
     }
 }
 
-impl From<dns::DnsError> for Error {
-    fn from(err: dns::DnsError) -> Error {
+impl From<dns::Error> for Error {
+    fn from(err: dns::Error) -> Error {
         Error::Dns(err)
     }
 }

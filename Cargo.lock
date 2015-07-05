@@ -74,5 +74,5 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 [[package]]
 name = "winapi"
 version = "0.2.0-pre"
-source = "git+https://github.com/retep998/winapi-rs#c268a22ae3aa4344b9d44b265138085d49976aa6"
+source = "git+https://github.com/retep998/winapi-rs#904a8ef3865b5537fa1e1e1b9e615fb5d034099a"
 

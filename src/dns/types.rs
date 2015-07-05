@@ -1,4 +1,4 @@
-use dns::{DnsError, Result};
+use dns::{Error, Result};
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -19,7 +19,7 @@ impl OpCode {
             0x10 => OpCode::STATUS,
             0x20 => OpCode::NOTIFY,
             0x28 => OpCode::UPDATE,
-            _    => return Err(DnsError::BadOpCode),
+            _    => return Err(Error::BadOpCode),
         })
     }
 }
@@ -69,7 +69,7 @@ impl RCode {
             0x14 => RCode::BADNAME,
             0x15 => RCode::BADALG,
             0x16 => RCode::BADTRUNC,
-            _    => return Err(DnsError::BadRCode),
+            _    => return Err(Error::BadRCode),
         })
     }
 }
@@ -93,7 +93,10 @@ impl Class {
             0x04 => Class::HS,
             0xfe => Class::NONE,
             0xff => Class::ANY,
-            _ => return Err(DnsError::BadClass)
+            _ => {
+                println!("Unexpected {}", v);
+                return Err(Error::BadClass)
+            }
         })
     }
 }
@@ -179,7 +182,7 @@ pub enum RType {
     AXFR       = 0x00FC,
     MAILB      = 0x00FD,
     MAILA      = 0x00FE,
-//    ANY        = 0x00FF,
+    ALL        = 0x00FF, // ANY
 
     URI        = 0x0100,
     CAA        = 0x0101,
@@ -271,7 +274,7 @@ impl RType {
             0x00FC => RType::AXFR,
             0x00FD => RType::MAILB,
             0x00FE => RType::MAILA,
-//            0x00FF => RType::ANY,
+            0x00FF => RType::ALL, // ANY
 
             0x0100 => RType::URI,
             0x0101 => RType::CAA,
@@ -280,7 +283,7 @@ impl RType {
 
             0xFFFF => RType::Reserved,
 
-            _ => return Err(DnsError::BadRType)
+            _ => return Err(Error::BadRType)
         })
     }
 }
