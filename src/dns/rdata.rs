@@ -10,7 +10,6 @@ pub enum RData {
     RawData(Vec<u8>),
 }
 
-
 impl RData {
 
     #[allow(dead_code)]

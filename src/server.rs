@@ -40,7 +40,7 @@ impl Server {
         let mut evloop = try!(mio::EventLoop::<Server>::configured(config));
         try!(evloop.register_opt(&self.udp_socket,
                                  SERVER_UDP,
-                                 mio::Interest::all(),
+                                 mio::EventSet::all(),
                                  mio::PollOpt::edge()));
         try!(evloop.run(self));
 
@@ -53,7 +53,7 @@ impl mio::Handler for Server {
     type Timeout = usize;
     type Message = ();
 
-    fn readable(&mut self, _event_loop: &mut mio::EventLoop<Server>, token: mio::Token, _hint: mio::ReadHint) {
+    fn ready(&mut self, _event_loop: &mut mio::EventLoop<Server>, token: mio::Token, _events: mio::EventSet) {
         match token {
             SERVER_UDP => {
                 let mut buf = [0; 512];
@@ -64,6 +64,9 @@ impl mio::Handler for Server {
                                 println!("{}", msg);
 
                                 let msg = Message::new_reply(&msg);
+
+                                // todo move response
+
                                 let len = msg.pack(&mut buf, 0).unwrap();
 
                                 match self.udp_socket.send_to(&mut SliceBuf::wrap(&mut buf[..len]), src) {
